@@ -1,15 +1,9 @@
-
-import React, { useState, useRef, useEffect } from 'react';
-import { Vehicle, OwnershipType } from '../types';
+import React, { useState, useRef } from 'react';
+import { Vehicle, OwnershipType, User } from '../types';
 import Button from './Button';
 import { formatPlate, handlePriceChange, formatCurrency, isValidPlate, formatDateForInput } from '../utils';
-import { Car, ChevronRight, ChevronLeft, CheckCircle, Search, ChevronDown, AlertCircle, ShieldCheck, Calendar, CreditCard, Layers, Clock, User as UserIcon, Cloud } from 'lucide-react';
+import { Car, ChevronRight, ChevronLeft, CheckCircle, Search, ChevronDown, AlertCircle, ShieldCheck, Calendar, CreditCard, Layers, User as UserIcon } from 'lucide-react';
 import { mockBackend } from '../services/mockBackend';
-import GoogleConfig from './GoogleConfig';
-
-interface OnboardingProps {
-  onComplete: (data: { vehicle: Vehicle, userName: string }) => void;
-}
 
 const CAR_DATA: Record<string, string[]> = {
   "Chevrolet": ["Onix", "Onix Plus", "Tracker", "Spin", "Cruze", "Montana", "S10"],
@@ -44,10 +38,13 @@ const WEEK_DAYS = [
   { value: 7, label: 'Domingo' },
 ];
 
+interface OnboardingProps {
+  onComplete: (data: { vehicle: Vehicle, userName: string }) => void;
+}
+
 const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
   const [step, setStep] = useState(1);
   const totalSteps = 4;
-  const [isGoogleConfigOpen, setIsGoogleConfigOpen] = useState(false);
   
   // Step 1: User Name
   const [userName, setUserName] = useState('');
@@ -59,18 +56,13 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
   const [ownershipType, setOwnershipType] = useState<OwnershipType>('OWNED');
   
   // Financial State
-  const [costValue, setCostValue] = useState(0); // Rent or Installment Amount
-  
-  // Rent Specific
+  const [costValue, setCostValue] = useState(0); 
   const [rentFrequency, setRentFrequency] = useState<'WEEKLY' | 'MONTHLY'>('MONTHLY');
-  const [rentDueDay, setRentDueDay] = useState<number>(5); // 1-31 (Monthly) or 1-7 (Weekly)
-
-  // Financing Specific
+  const [rentDueDay, setRentDueDay] = useState<number>(5);
   const [financingTotalMonths, setFinancingTotalMonths] = useState<string>('');
   const [financingPaidMonths, setFinancingPaidMonths] = useState<string>('');
   const [financingDueDay, setFinancingDueDay] = useState<number>(10);
-  
-  const [vehicleValue, setVehicleValue] = useState(0); // For OWNED depreciation
+  const [vehicleValue, setVehicleValue] = useState(0);
   
   // Insurance State
   const [hasInsurance, setHasInsurance] = useState(false);
@@ -78,10 +70,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
   const [insuranceInstallmentValue, setInsuranceInstallmentValue] = useState(0);
   const [insuranceTotalInstallments, setInsuranceTotalInstallments] = useState('');
 
-  // Validation State
   const [plateError, setPlateError] = useState<string | null>(null);
-
-  // Autocomplete UX State
   const [showBrandSuggestions, setShowBrandSuggestions] = useState(false);
   const [showModelSuggestions, setShowModelSuggestions] = useState(false);
   const modelInputRef = useRef<HTMLInputElement>(null);
@@ -129,37 +118,30 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
   const prevStep = () => setStep(s => Math.max(1, s - 1));
 
   const handleFinish = () => {
+    const userId = crypto.randomUUID();
     const fullModelName = `${brand} ${model}`.trim();
 
     const vehicle: Vehicle = {
       id: crypto.randomUUID(),
+      userId,
       model: fullModelName,
       plate,
       ownershipType,
-      
-      // Rent Data
       rentAmount: ownershipType === 'RENTED' ? costValue : 0,
       rentFrequency: ownershipType === 'RENTED' ? rentFrequency : undefined,
       rentDueDay: ownershipType === 'RENTED' ? rentDueDay : undefined,
-
-      // Financing Data
       financingInstallment: ownershipType === 'FINANCED' ? costValue : 0,
       financingDueDay: ownershipType === 'FINANCED' ? financingDueDay : undefined,
       financingTotalMonths: ownershipType === 'FINANCED' ? parseInt(financingTotalMonths) || 0 : undefined,
       financingPaidMonths: ownershipType === 'FINANCED' ? parseInt(financingPaidMonths) || 0 : undefined,
-      
       vehicleValue: ownershipType === 'OWNED' ? vehicleValue : undefined,
-      
-      // Detailed Insurance Data
       insuranceRenewalDate: hasInsurance ? insuranceDate : undefined,
       insuranceInstallmentValue: hasInsurance ? insuranceInstallmentValue : undefined,
       insuranceTotalInstallments: hasInsurance ? parseInt(insuranceTotalInstallments) || 0 : undefined,
-
       isArchived: false,
       createdAt: new Date().toISOString(),
     };
     
-    // Pass both vehicle and user name
     onComplete({ vehicle, userName });
   };
 
@@ -169,156 +151,100 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
         <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-4 text-primary-600">
           {step === 1 ? <UserIcon size={32} /> : <Car size={32} />}
         </div>
-        <h1 className="text-2xl font-bold text-slate-800">Bem-vindo!</h1>
-        <p className="text-slate-500 mt-2">Vamos configurar seu perfil para calcular seu lucro real.</p>
+        <h1 className="text-2xl font-bold text-slate-800 tracking-tight">MotoristaReal</h1>
+        <p className="text-slate-500 mt-2 text-sm">Simplificando sua gestão financeira.</p>
       </div>
 
-      <div className="bg-white p-6 rounded-2xl shadow-xl shadow-slate-200/50 relative">
-        
-        {/* Progress Bar */}
-        <div className="flex gap-2 mb-6">
-          {Array.from({ length: totalSteps }).map((_, i) => {
-             const stepNum = i + 1;
-             return (
-               <div key={stepNum} className={`h-1.5 flex-1 rounded-full ${stepNum <= step ? 'bg-primary-500' : 'bg-slate-100'}`} />
-             );
-          })}
+      <div className="bg-white p-6 rounded-[32px] shadow-2xl shadow-slate-200/50 relative overflow-hidden">
+        <div className="flex gap-1.5 mb-8">
+          {Array.from({ length: totalSteps }).map((_, i) => (
+            <div key={i} className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${i + 1 <= step ? 'bg-primary-500' : 'bg-slate-100'}`} />
+          ))}
         </div>
 
         {step === 1 && (
-          <div className="space-y-4 animate-fade-in">
-            <h2 className="text-lg font-bold text-slate-700">Como você quer ser chamado?</h2>
-            
+          <div className="space-y-6 animate-fade-in">
+            <h2 className="text-xl font-black text-slate-800">Como você quer ser chamado?</h2>
             <div>
-              <label className="text-sm text-slate-500 font-medium">Seu Nome</label>
+              <label className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2 block">Nome Completo</label>
               <input 
                 value={userName}
                 onChange={e => setUserName(e.target.value)}
-                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl mt-1 outline-none focus:ring-2 focus:ring-primary-500 text-lg font-medium text-slate-800"
+                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-primary-500 text-lg font-bold text-slate-800"
                 placeholder="Ex: João Silva"
                 autoFocus
               />
             </div>
-
             <Button fullWidth onClick={nextStep} disabled={!userName.trim()}>
-              Continuar <ChevronRight size={18} />
+              Próximo <ChevronRight size={18} />
             </Button>
-
-            <div className="pt-4 border-t border-slate-100 mt-4 text-center">
-              <button 
-                onClick={() => setIsGoogleConfigOpen(true)}
-                className="text-xs font-bold text-primary-600 flex items-center justify-center gap-1 mx-auto hover:underline"
-              >
-                <Cloud size={14} /> Já tem conta? Restaurar do Google Drive
-              </button>
-            </div>
           </div>
         )}
 
-        {/* ... existing steps 2, 3, 4 (no changes needed for brevity, but I will include them to ensure file integrity) ... */}
         {step === 2 && (
           <div className="space-y-4 animate-fade-in">
-            <h2 className="text-lg font-bold text-slate-700">Qual o seu carro?</h2>
+            <h2 className="text-xl font-black text-slate-800">Seu Carro de Trabalho</h2>
             
             <div className="relative">
-              <label className="text-sm text-slate-500 font-medium">Marca</label>
+              <label className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2 block">Marca</label>
               <div className="relative">
                 <input 
                   value={brand}
-                  onChange={(e) => {
-                    setBrand(e.target.value);
-                    setShowBrandSuggestions(true);
-                    if (!CAR_DATA[e.target.value]) setModel(''); 
-                  }}
+                  onChange={(e) => { setBrand(e.target.value); setShowBrandSuggestions(true); }}
                   onFocus={() => setShowBrandSuggestions(true)}
                   onBlur={() => setTimeout(() => setShowBrandSuggestions(false), 200)}
-                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl mt-1 focus:ring-2 focus:ring-primary-500 outline-none"
+                  className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-primary-500 outline-none font-bold"
                   placeholder="Ex: Fiat, Chevrolet..."
                 />
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none mt-1" size={16} />
               </div>
-              
               {showBrandSuggestions && (
-                <ul className="absolute z-30 left-0 right-0 top-full mt-1 bg-white border border-slate-100 rounded-xl shadow-xl max-h-48 overflow-y-auto divide-y divide-slate-50">
+                <ul className="absolute z-30 left-0 right-0 top-full mt-2 bg-white border border-slate-100 rounded-2xl shadow-2xl max-h-48 overflow-y-auto overflow-x-hidden">
                   {getBrandSuggestions().map((b) => (
-                    <li 
-                      key={b}
-                      onMouseDown={() => handleSelectBrand(b)}
-                      className="px-4 py-3 text-sm text-slate-700 hover:bg-primary-50 hover:text-primary-700 cursor-pointer transition-colors"
-                    >
-                      {b}
-                    </li>
+                    <li key={b} onMouseDown={() => handleSelectBrand(b)} className="px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-primary-50 hover:text-primary-700 cursor-pointer">{b}</li>
                   ))}
                 </ul>
               )}
             </div>
 
             <div className="relative">
-              <label className="text-sm text-slate-500 font-medium">Modelo</label>
-              <div className="relative">
-                <input 
-                  ref={modelInputRef}
-                  value={model}
-                  onChange={(e) => {
-                    setModel(e.target.value);
-                    setShowModelSuggestions(true);
-                  }}
-                  onFocus={() => setShowModelSuggestions(true)}
-                  onBlur={() => setTimeout(() => setShowModelSuggestions(false), 200)}
-                  disabled={!CAR_DATA[brand]}
-                  className={`w-full p-3 bg-slate-50 border border-slate-200 rounded-xl mt-1 outline-none transition-all ${!CAR_DATA[brand] ? 'opacity-50 cursor-not-allowed' : 'focus:ring-2 focus:ring-primary-500'}`}
-                  placeholder={!CAR_DATA[brand] ? "Selecione a marca primeiro" : "Ex: Argo, Toro..."}
-                />
-                 {model.length === 0 && CAR_DATA[brand] && (
-                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none mt-1" size={18} />
-                )}
-              </div>
-
-              {showModelSuggestions && CAR_DATA[brand] && (
-                <ul className="absolute z-20 left-0 right-0 top-full mt-1 bg-white border border-slate-100 rounded-xl shadow-xl max-h-48 overflow-y-auto divide-y divide-slate-50">
+              <label className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2 block">Modelo</label>
+              <input 
+                ref={modelInputRef}
+                value={model}
+                onChange={(e) => { setModel(e.target.value); setShowModelSuggestions(true); }}
+                onFocus={() => setShowModelSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowModelSuggestions(false), 200)}
+                disabled={!brand}
+                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold disabled:opacity-50"
+                placeholder={!brand ? "Selecione a marca" : "Ex: Argo, Onix..."}
+              />
+              {showModelSuggestions && brand && (
+                <ul className="absolute z-20 left-0 right-0 top-full mt-2 bg-white border border-slate-100 rounded-2xl shadow-2xl max-h-48 overflow-y-auto">
                   {getModelSuggestions().map((m) => (
-                    <li 
-                      key={m}
-                      onMouseDown={() => handleSelectModel(m)}
-                      className="px-4 py-3 text-sm text-slate-700 hover:bg-primary-50 hover:text-primary-700 cursor-pointer transition-colors"
-                    >
-                      {m}
-                    </li>
+                    <li key={m} onMouseDown={() => handleSelectModel(m)} className="px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-primary-50 hover:text-primary-700 cursor-pointer">{m}</li>
                   ))}
                 </ul>
               )}
             </div>
 
             <div>
-              <label className="text-sm text-slate-500 font-medium">Placa</label>
+              <label className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2 block">Placa</label>
               <input 
                 value={plate}
-                onChange={e => {
-                   setPlate(formatPlate(e.target.value));
-                   if(plateError) setPlateError(null);
-                }}
-                className={`w-full p-3 bg-slate-50 border rounded-xl mt-1 outline-none uppercase font-mono transition-colors ${
-                  plateError 
-                    ? 'border-red-500 focus:ring-2 focus:ring-red-200' 
-                    : 'border-slate-200 focus:ring-2 focus:ring-primary-500'
-                }`}
+                onChange={e => { setPlate(formatPlate(e.target.value)); setPlateError(null); }}
+                className={`w-full p-4 bg-slate-50 border rounded-2xl outline-none uppercase font-mono text-xl font-bold ${plateError ? 'border-red-500' : 'border-slate-200'}`}
                 placeholder="ABC-1234"
                 maxLength={7}
               />
-              {plateError && (
-                <div className="flex items-center gap-2 mt-2 text-xs text-red-500 font-medium animate-pulse">
-                  <AlertCircle size={14} />
-                  <span>{plateError}</span>
-                </div>
-              )}
+              {plateError && <p className="text-[10px] text-red-500 font-bold mt-1 uppercase">{plateError}</p>}
             </div>
             
-            <div className="flex gap-3">
+            <div className="flex gap-3 pt-4">
               <Button variant="secondary" onClick={prevStep} className="px-3">
                  <ChevronLeft size={20} />
               </Button>
               <Button fullWidth onClick={validateStep2} disabled={!brand || !model || !plate}>
-                Continuar <ChevronRight size={18} />
+                Continuar
               </Button>
             </div>
           </div>
@@ -326,149 +252,57 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
 
         {step === 3 && (
           <div className="space-y-4 animate-fade-in">
-            <h2 className="text-lg font-bold text-slate-700">Esse carro é...</h2>
+            <h2 className="text-xl font-black text-slate-800">O carro é...</h2>
             <div className="grid gap-3">
               {(['OWNED', 'FINANCED', 'RENTED'] as OwnershipType[]).map((type) => (
                 <button
                   key={type}
                   onClick={() => setOwnershipType(type)}
-                  className={`p-4 rounded-xl border-2 text-left transition-all ${
-                    ownershipType === type 
-                    ? 'border-primary-500 bg-primary-50 text-primary-800' 
-                    : 'border-slate-100 hover:border-slate-200 text-slate-600'
-                  }`}
+                  className={`p-5 rounded-2xl border-2 text-left transition-all ${ownershipType === type ? 'border-primary-500 bg-primary-50' : 'border-slate-100 bg-white'}`}
                 >
-                  <span className="font-bold block">{type === 'OWNED' ? 'Próprio (Quitado)' : type === 'FINANCED' ? 'Financiado' : 'Alugado'}</span>
+                  <span className="font-black text-slate-800 block">{type === 'OWNED' ? 'Próprio' : type === 'FINANCED' ? 'Financiado' : 'Alugado'}</span>
+                  <span className="text-[10px] text-slate-500 font-bold uppercase">Clique para selecionar</span>
                 </button>
               ))}
             </div>
-            <div className="flex gap-3">
+            <div className="flex gap-3 pt-4">
               <Button variant="secondary" onClick={prevStep} className="px-3">
                  <ChevronLeft size={20} />
               </Button>
-              <Button fullWidth onClick={nextStep} className="flex-1">
-                 Continuar <ChevronRight size={18} />
+              <Button fullWidth onClick={nextStep}>
+                 Próximo
               </Button>
             </div>
           </div>
         )}
 
         {step === 4 && (
-          <div className="space-y-4 animate-fade-in">
-            <h2 className="text-lg font-bold text-slate-700">Custos Fixos</h2>
+          <div className="space-y-6 animate-fade-in">
+            <h2 className="text-xl font-black text-slate-800">Informações Financeiras</h2>
             
             {ownershipType === 'RENTED' && (
               <div className="space-y-4">
-                {/* Rent Frequency Toggle */}
-                <div className="bg-slate-100 p-1 rounded-xl flex">
-                  <button
-                    onClick={() => setRentFrequency('MONTHLY')}
-                    className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${
-                      rentFrequency === 'MONTHLY' ? 'bg-white text-primary-600 shadow-sm' : 'text-slate-500'
-                    }`}
-                  >
-                    Mensal
-                  </button>
-                  <button
-                    onClick={() => setRentFrequency('WEEKLY')}
-                    className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${
-                      rentFrequency === 'WEEKLY' ? 'bg-white text-primary-600 shadow-sm' : 'text-slate-500'
-                    }`}
-                  >
-                    Semanal
-                  </button>
+                <div className="bg-slate-100 p-1 rounded-2xl flex">
+                  <button onClick={() => setRentFrequency('MONTHLY')} className={`flex-1 py-2 text-xs font-black rounded-xl transition-all ${rentFrequency === 'MONTHLY' ? 'bg-white text-primary-600 shadow-sm' : 'text-slate-400'}`}>MENSAL</button>
+                  <button onClick={() => setRentFrequency('WEEKLY')} className={`flex-1 py-2 text-xs font-black rounded-xl transition-all ${rentFrequency === 'WEEKLY' ? 'bg-white text-primary-600 shadow-sm' : 'text-slate-400'}`}>SEMANAL</button>
                 </div>
-
                 <div>
-                  <label className="text-sm text-slate-500 font-medium">Valor do Aluguel ({rentFrequency === 'MONTHLY' ? 'Mensal' : 'Semanal'})</label>
-                  <input 
-                    value={formatCurrency(costValue).replace('R$', '').trim()}
-                    onChange={e => setCostValue(handlePriceChange(e.target.value))}
-                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl mt-1 text-lg font-bold text-slate-800 focus:ring-2 focus:ring-primary-500 outline-none"
-                    placeholder="0,00"
-                  />
-                </div>
-
-                <div>
-                   <label className="text-sm text-slate-500 font-medium">Dia do Vencimento</label>
-                   {rentFrequency === 'MONTHLY' ? (
-                     <div className="relative">
-                       <input 
-                         type="number"
-                         min="1"
-                         max="31"
-                         value={rentDueDay}
-                         onChange={e => setRentDueDay(Number(e.target.value))}
-                         className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl mt-1 font-bold text-slate-800 focus:ring-2 focus:ring-primary-500 outline-none pl-10"
-                       />
-                       <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 mt-0.5" size={18} />
-                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 pointer-events-none mt-0.5">DIA DO MÊS</span>
-                     </div>
-                   ) : (
-                     <div className="relative mt-1">
-                        <select 
-                          value={rentDueDay}
-                          onChange={e => setRentDueDay(Number(e.target.value))}
-                          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-primary-500 outline-none appearance-none"
-                        >
-                          {WEEK_DAYS.map(day => (
-                            <option key={day.value} value={day.value}>{day.label}</option>
-                          ))}
-                        </select>
-                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18} />
-                     </div>
-                   )}
+                  <label className="text-[10px] text-slate-400 font-black uppercase block mb-1">Valor do Aluguel</label>
+                  <input value={formatCurrency(costValue).replace('R$', '').trim()} onChange={e => setCostValue(handlePriceChange(e.target.value))} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-slate-800 outline-none" placeholder="0,00" />
                 </div>
               </div>
             )}
 
             {ownershipType === 'FINANCED' && (
               <div className="space-y-4">
-                <div className="grid grid-cols-3 gap-4">
-                   <div className="col-span-2">
-                    <label className="text-sm text-slate-500 font-medium">Valor da Parcela</label>
-                    <input 
-                      value={formatCurrency(costValue).replace('R$', '').trim()}
-                      onChange={e => setCostValue(handlePriceChange(e.target.value))}
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl mt-1 text-lg font-bold text-slate-800 focus:ring-2 focus:ring-primary-500 outline-none"
-                      placeholder="0,00"
-                    />
+                <div className="grid grid-cols-2 gap-3">
+                   <div className="col-span-1">
+                    <label className="text-[10px] text-slate-400 font-black uppercase block mb-1">Valor Parcela</label>
+                    <input value={formatCurrency(costValue).replace('R$', '').trim()} onChange={e => setCostValue(handlePriceChange(e.target.value))} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-slate-800 outline-none" />
                    </div>
                    <div className="col-span-1">
-                    <label className="text-sm text-slate-500 font-medium">Dia Venc.</label>
-                    <div className="relative">
-                      <input 
-                        type="number"
-                        min="1"
-                        max="31"
-                        value={financingDueDay}
-                        onChange={e => setFinancingDueDay(Number(e.target.value))}
-                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl mt-1 font-bold text-slate-800 focus:ring-2 focus:ring-primary-500 outline-none text-center"
-                      />
-                    </div>
-                   </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                   <div>
-                    <label className="text-sm text-slate-500 font-medium">Prazo Total (Meses)</label>
-                    <input 
-                      type="number"
-                      value={financingTotalMonths}
-                      onChange={e => setFinancingTotalMonths(e.target.value)}
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl mt-1 font-bold text-slate-800 focus:ring-2 focus:ring-primary-500 outline-none"
-                      placeholder="Ex: 48"
-                    />
-                   </div>
-                   <div>
-                    <label className="text-sm text-slate-500 font-medium">Qtd Paga (Meses)</label>
-                    <input 
-                      type="number"
-                      value={financingPaidMonths}
-                      onChange={e => setFinancingPaidMonths(e.target.value)}
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl mt-1 font-bold text-slate-800 focus:ring-2 focus:ring-primary-500 outline-none"
-                      placeholder="Ex: 12"
-                    />
+                    <label className="text-[10px] text-slate-400 font-black uppercase block mb-1">Total Meses</label>
+                    <input type="number" value={financingTotalMonths} onChange={e => setFinancingTotalMonths(e.target.value)} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-slate-800 outline-none" />
                    </div>
                 </div>
               </div>
@@ -476,102 +310,37 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
 
              {ownershipType === 'OWNED' && (
               <div>
-                <label className="text-sm text-slate-500 font-medium">Valor Estimado do Veículo (Fipe)</label>
-                <input 
-                  value={formatCurrency(vehicleValue).replace('R$', '').trim()}
-                  onChange={e => setVehicleValue(handlePriceChange(e.target.value))}
-                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl mt-1 text-lg font-bold text-slate-800 focus:ring-2 focus:ring-primary-500 outline-none"
-                  placeholder="0,00"
-                />
-                <p className="text-xs text-slate-400 mt-1">Essencial para calcular a depreciação do seu patrimônio.</p>
+                <label className="text-[10px] text-slate-400 font-black uppercase block mb-1">Valor Fipe (Aprox.)</label>
+                <input value={formatCurrency(vehicleValue).replace('R$', '').trim()} onChange={e => setVehicleValue(handlePriceChange(e.target.value))} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-slate-800 outline-none" />
+                <p className="text-[10px] text-slate-400 mt-2 font-medium">Usado para cálculo de depreciação automática.</p>
               </div>
             )}
 
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-              <div className="flex items-center gap-3">
-                  <div className="relative flex items-center">
-                      <input 
-                          type="checkbox"
-                          id="insurance-check"
-                          checked={hasInsurance}
-                          onChange={(e) => {
-                              setHasInsurance(e.target.checked);
-                              if (!e.target.checked) {
-                                setInsuranceInstallmentValue(0);
-                                setInsuranceTotalInstallments('');
-                              }
-                          }}
-                          className="w-5 h-5 text-primary-600 border-slate-300 rounded focus:ring-primary-500 cursor-pointer"
-                      />
-                  </div>
-                  <label htmlFor="insurance-check" className="font-medium text-slate-700 cursor-pointer select-none flex items-center gap-2">
-                      <ShieldCheck size={18} className="text-slate-400" />
-                      O veículo possui seguro?
-                  </label>
-              </div>
+            <div className="bg-slate-50 p-5 rounded-[24px] border border-slate-200">
+              <label className="flex items-center gap-3 cursor-pointer group">
+                  <input type="checkbox" checked={hasInsurance} onChange={(e) => setHasInsurance(e.target.checked)} className="w-5 h-5 accent-primary-500 rounded-lg" />
+                  <span className="font-bold text-slate-700 text-sm">Possui Seguro?</span>
+              </label>
 
               {hasInsurance && (
-                  <div className="animate-fade-in pl-8 space-y-4 pt-2">
-                       <div>
-                         <label className="text-xs text-slate-500 font-bold uppercase mb-1 flex items-center gap-1">
-                            <CreditCard size={12} /> Valor da Parcela
-                         </label>
-                         <input 
-                            value={formatCurrency(insuranceInstallmentValue).replace('R$', '').trim()}
-                            onChange={e => setInsuranceInstallmentValue(handlePriceChange(e.target.value))}
-                            className="w-full p-3 bg-white border border-slate-200 rounded-xl text-lg font-bold text-slate-800 focus:ring-2 focus:ring-primary-500 outline-none"
-                            placeholder="0,00"
-                            autoFocus
-                          />
-                       </div>
-                       <div className="grid grid-cols-2 gap-3">
-                         <div>
-                            <label className="text-xs text-slate-500 font-bold uppercase mb-1 flex items-center gap-1">
-                                <Layers size={12} /> Qtd. Parcelas
-                            </label>
-                            <input 
-                              type="number"
-                              value={insuranceTotalInstallments}
-                              onChange={e => setInsuranceTotalInstallments(e.target.value)}
-                              className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-primary-500 outline-none"
-                              placeholder="12"
-                            />
-                         </div>
-                         <div>
-                            <label className="text-xs text-slate-500 font-bold uppercase mb-1 flex items-center gap-1">
-                                <Calendar size={12} /> Vencimento
-                            </label>
-                            <input 
-                              type="date"
-                              value={insuranceDate}
-                              onChange={e => setInsuranceDate(e.target.value)}
-                              className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-primary-500 outline-none text-sm"
-                            />
-                         </div>
-                       </div>
+                  <div className="mt-4 space-y-3 animate-fade-in border-t border-slate-200 pt-4">
+                       <label className="text-[10px] text-slate-400 font-black uppercase block">Valor da Parcela Mensal</label>
+                       <input value={formatCurrency(insuranceInstallmentValue).replace('R$', '').trim()} onChange={e => setInsuranceInstallmentValue(handlePriceChange(e.target.value))} className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none" />
                   </div>
               )}
             </div>
             
-            <div className="flex gap-3">
+            <div className="flex gap-3 pt-2">
               <Button variant="secondary" onClick={prevStep} className="px-3">
                  <ChevronLeft size={20} />
               </Button>
-              <Button fullWidth onClick={handleFinish} variant="primary" className="flex-1">
-                <CheckCircle size={18} /> Finalizar Cadastro
+              <Button fullWidth onClick={handleFinish}>
+                <CheckCircle size={18} /> Finalizar
               </Button>
             </div>
           </div>
         )}
-
       </div>
-      
-      {/* Restore/Login Modal */}
-      <GoogleConfig 
-        isOpen={isGoogleConfigOpen} 
-        onClose={() => setIsGoogleConfigOpen(false)} 
-        onRestore={() => {}} // Handle internal restore logic in component or reload
-      />
     </div>
   );
 };

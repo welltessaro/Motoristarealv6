@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { X, Car, CreditCard, Archive, Trash2, Calendar, Layers, ShieldCheck, Plus, CheckCircle2, ChevronDown } from 'lucide-react';
 import { Vehicle, OwnershipType, Transaction, Category } from '../types';
@@ -8,9 +9,11 @@ interface VehicleManagerModalProps {
   isOpen: boolean;
   onClose: () => void;
   vehicle: Vehicle | null;
-  onSave: (vehicle: Vehicle) => void;
+  // Fix: use Omit<Vehicle, 'userId'> as the modal construction doesn't provide userId
+  onSave: (vehicle: Omit<Vehicle, 'userId'>) => void;
   onArchive: (vehicleId: string) => void;
-  onAddTransaction?: (transaction: Omit<Transaction, 'id'>) => void;
+  // Fix: use Omit<Transaction, 'id' | 'userId'> for the payment creation
+  onAddTransaction?: (transaction: Omit<Transaction, 'id' | 'userId'>) => void;
 }
 
 const WEEK_DAYS = [
@@ -51,7 +54,8 @@ const VehicleManagerModal: React.FC<VehicleManagerModalProps> = ({ isOpen, onClo
   const [insuranceTotalInstallments, setInsuranceTotalInstallments] = useState<number>(0);
 
   // Transaction Queue for "Pay Installment" feature
-  const [pendingTransactions, setPendingTransactions] = useState<Omit<Transaction, 'id'>[]>([]);
+  // Fix: Update type to omit userId
+  const [pendingTransactions, setPendingTransactions] = useState<Omit<Transaction, 'id' | 'userId'>[]>([]);
 
   useEffect(() => {
     if (vehicle) {
@@ -108,7 +112,8 @@ const VehicleManagerModal: React.FC<VehicleManagerModalProps> = ({ isOpen, onClo
     // Determine if insurance should be saved based on the toggle state
     const shouldSaveInsurance = hasInsurance && insuranceInstallmentValue > 0;
 
-    const newVehicle: Vehicle = {
+    // Fix: Construction of newVehicle without userId (added by parent App.tsx)
+    const newVehicle: Omit<Vehicle, 'userId'> = {
       id: vehicle?.id || crypto.randomUUID(),
       model,
       plate,
@@ -164,7 +169,8 @@ const VehicleManagerModal: React.FC<VehicleManagerModalProps> = ({ isOpen, onClo
 
     // 2. Queue Transaction Creation
     if (vehicle) {
-      const newTx: Omit<Transaction, 'id'> = {
+      // Fix: construction of newTx without userId
+      const newTx: Omit<Transaction, 'id' | 'userId'> = {
         vehicleId: vehicle.id,
         type: 'EXPENSE',
         category: Category.FINANCING,

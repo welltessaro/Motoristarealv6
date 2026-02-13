@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Transaction, Vehicle, Category, User, CategoryItem } from '../types';
 import { formatCurrency, getDeviceLocale, handlePriceChange, formatDateForInput } from '../utils';
@@ -11,7 +12,8 @@ interface DashboardProps {
   user: User;
   onUpdateUser: (user: User) => void;
   categories: CategoryItem[];
-  onAddTransaction: (transaction: Omit<Transaction, 'id'>) => void;
+  // Fix: changed signature to omit userId which is handled centrally in App.tsx
+  onAddTransaction: (transaction: Omit<Transaction, 'id' | 'userId'>) => void;
   onUpdateVehicle: (vehicle: Vehicle) => void;
 }
 
@@ -386,6 +388,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     if (!billToPay || !activeVehicle) return;
 
     // 1. Add Transaction
+    // Fix: transaction object now matches Omit<Transaction, 'id' | 'userId'>
     onAddTransaction({
       vehicleId: activeVehicle.id,
       type: 'EXPENSE',
@@ -771,7 +774,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                        {billToPay.actualAmount < billToPay.expectedAmount ? (
                           <span className="text-emerald-600 font-bold">Desconto de {formatCurrency(billToPay.expectedAmount - billToPay.actualAmount)}</span>
                        ) : (
-                          <span className="text-red-500 font-bold">Juros de {formatCurrency(billToPay.actualAmount - billToPay.expectedAmount)}</span>
+                          <span className="text-red-500 font-bold">Juros de {formatCurrency(billToPay.expectedAmount - billToPay.actualAmount)}</span>
                        )}
                     </div>
                  )}

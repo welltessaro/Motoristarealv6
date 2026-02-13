@@ -1,4 +1,3 @@
-
 export type OwnershipType = 'OWNED' | 'FINANCED' | 'RENTED';
 
 export type TransactionType = 'INCOME' | 'EXPENSE';
@@ -16,6 +15,7 @@ export enum Category {
 
 export interface CategoryItem {
   id: string;
+  userId?: string; // Null for system categories
   label: string;
   type: 'INCOME' | 'EXPENSE' | 'BOTH';
   color: string;
@@ -37,27 +37,28 @@ export type FuelType = 'GASOLINE' | 'ETHANOL' | 'GNV' | 'ELECTRIC';
 
 export interface Vehicle {
   id: string;
+  userId: string;
   model: string;
   plate: string;
   ownershipType: OwnershipType;
   
   // Rent
-  rentAmount?: number; // Weekly or Monthly
+  rentAmount?: number;
   rentFrequency?: 'WEEKLY' | 'MONTHLY';
-  rentDueDay?: number; // 1-31 (Monthly) or 1-7 (Weekly, 1=Mon, 7=Sun)
+  rentDueDay?: number;
 
   // Financing
   financingInstallment?: number;
-  financingDueDay?: number; // 1-31
+  financingDueDay?: number;
   financingTotalMonths?: number;
   financingPaidMonths?: number;
-  vehicleValue?: number; // Market value for depreciation calculation (OWNED)
+  vehicleValue?: number;
   
-  // New Insurance Fields
-  insuranceRenewalDate?: string; // Data de vencimento da apólice (anual)
-  insuranceInstallmentValue?: number; // Valor da parcela mensal
-  insuranceDueDay?: number; // 1-31 (Dia do vencimento da parcela)
-  insuranceTotalInstallments?: number; // Quantidade de parcelas
+  // Insurance
+  insuranceRenewalDate?: string;
+  insuranceInstallmentValue?: number;
+  insuranceDueDay?: number;
+  insuranceTotalInstallments?: number;
 
   isArchived: boolean;
   createdAt: string;
@@ -65,6 +66,7 @@ export interface Vehicle {
 
 export interface Account {
   id: string;
+  userId: string;
   name: string;
   type: 'CHECKING' | 'SAVINGS' | 'CASH';
   balance: number;
@@ -74,18 +76,19 @@ export interface Account {
 
 export interface Transaction {
   id: string;
+  userId: string;
   vehicleId: string;
-  accountId?: string; // Link to Account
+  accountId?: string;
   type: TransactionType;
   category: string;
   amount: number;
-  date: string; // ISO String
+  date: string;
   description?: string;
   
   // Fuel Specific
   fuelType?: FuelType;
-  unitPrice?: number; // Price per Liter/m3/kWh
-  volume?: number; // Total Liters/m3/kWh
+  unitPrice?: number;
+  volume?: number;
 }
 
 export interface User {
@@ -93,7 +96,8 @@ export interface User {
   name: string;
   email: string;
   onboardingCompleted: boolean;
-  monthlyGoal?: number; // Meta de lucro livre mensal
+  monthlyGoal?: number;
+  createdAt: string;
 }
 
 export interface AppVersionInfo {

@@ -1,33 +1,25 @@
-
 import { Vehicle, Transaction, User, CategoryItem, DEFAULT_CATEGORIES, Account } from '../types';
-import { googleDriveService } from './googleDriveService';
 
 const KEYS = {
-  VEHICLES: 'motoristareal_vehicles',
-  TRANSACTIONS: 'motoristareal_transactions',
-  USER: 'motoristareal_user',
-  CATEGORIES: 'motoristareal_categories',
-  ACCOUNTS: 'motoristareal_accounts',
+  VEHICLES: 'motoristareal_vehicles_v2',
+  TRANSACTIONS: 'motoristareal_transactions_v2',
+  USER: 'motoristareal_user_v2',
+  CATEGORIES: 'motoristareal_categories_v2',
+  ACCOUNTS: 'motoristareal_accounts_v2',
 };
 
+/**
+ * Service to handle data persistence.
+ * Structured to be easily replaced by a Supabase/Firebase client.
+ */
 class BackendService {
   private memoryCache: Record<string, any> = {};
   private isInitialized = false;
-  private syncDebounceTimer: any = null;
 
   async init(): Promise<void> {
     if (this.isInitialized) return;
 
-    // 1. Initialize Google Service (Async) - Non-blocking
-    try {
-      if (typeof window !== 'undefined') {
-         setTimeout(() => googleDriveService.init(), 1000);
-      }
-    } catch (e) {
-      console.error("Google Init Error", e);
-    }
-
-    // 2. Load from LocalStorage (Instant) with Error Handling
+    // Load from LocalStorage
     this.memoryCache[KEYS.USER] = this.safeLoad(KEYS.USER, null);
     this.memoryCache[KEYS.VEHICLES] = this.safeLoad(KEYS.VEHICLES, []);
     this.memoryCache[KEYS.TRANSACTIONS] = this.safeLoad(KEYS.TRANSACTIONS, []);
@@ -37,7 +29,6 @@ class BackendService {
     this.isInitialized = true;
   }
 
-  // Helper to prevent crashes on corrupted JSON
   private safeLoad(key: string, fallback: any): any {
     try {
       const item = localStorage.getItem(key);
@@ -48,94 +39,23 @@ class BackendService {
     }
   }
 
-  // Restore only from Google Drive
-  async restoreFromCloud(): Promise<boolean> {
-    try {
-      const data = await googleDriveService.downloadData();
-
-      if (data) {
-        // Update Local Storage
-        if (data.user) localStorage.setItem(KEYS.USER, JSON.stringify(data.user));
-        if (data.vehicles) localStorage.setItem(KEYS.VEHICLES, JSON.stringify(data.vehicles));
-        if (data.transactions) localStorage.setItem(KEYS.TRANSACTIONS, JSON.stringify(data.transactions));
-        if (data.categories) localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(data.categories));
-        if (data.accounts) localStorage.setItem(KEYS.ACCOUNTS, JSON.stringify(data.accounts));
-
-        // Update Memory
-        this.memoryCache[KEYS.USER] = data.user;
-        this.memoryCache[KEYS.VEHICLES] = data.vehicles;
-        this.memoryCache[KEYS.TRANSACTIONS] = data.transactions;
-        this.memoryCache[KEYS.CATEGORIES] = data.categories;
-        this.memoryCache[KEYS.ACCOUNTS] = data.accounts;
-        
-        return true;
-      }
-    } catch (e) {
-      console.error(`Restore failed from Google`, e);
-    }
-    return false;
-  }
-
   private loadAccountsFromStorage(): Account[] {
-    try {
-      const data = localStorage.getItem(KEYS.ACCOUNTS);
-      if (!data) {
-        const defaultAccounts: Account[] = [
-          { id: 'acc_prof', name: 'Conta Profissional', type: 'CHECKING', balance: 0, isDefault: true, color: 'blue' },
-          { id: 'acc_pers', name: 'Conta Pessoal', type: 'CHECKING', balance: 0, isDefault: false, color: 'purple' },
-        ];
-        localStorage.setItem(KEYS.ACCOUNTS, JSON.stringify(defaultAccounts));
-        return defaultAccounts;
-      }
-      return JSON.parse(data);
-    } catch (e) {
-      // Fallback if accounts are corrupted
+    const data = this.safeLoad(KEYS.ACCOUNTS, null);
+    if (!data) {
+      const user = this.getUser();
       const defaultAccounts: Account[] = [
-          { id: 'acc_prof', name: 'Conta Profissional', type: 'CHECKING', balance: 0, isDefault: true, color: 'blue' },
+        { id: 'acc_prof', userId: user?.id || 'guest', name: 'Conta Profissional', type: 'CHECKING', balance: 0, isDefault: true, color: 'blue' },
+        { id: 'acc_pers', userId: user?.id || 'guest', name: 'Conta Pessoal', type: 'CHECKING', balance: 0, isDefault: false, color: 'purple' },
       ];
+      this.persist(KEYS.ACCOUNTS, defaultAccounts);
       return defaultAccounts;
     }
+    return data;
   }
 
-  // --- PERSISTENCE HELPER ---
-  private async persist(key: string, data: any) {
-    // 1. Update Memory
+  private persist(key: string, data: any) {
     this.memoryCache[key] = data;
-    
-    // 2. Update LocalStorage
     localStorage.setItem(key, JSON.stringify(data));
-
-    // 3. Trigger Cloud Sync (Debounced)
-    this.triggerCloudSync();
-  }
-
-  public async triggerCloudSyncNow() {
-    if (this.syncDebounceTimer) clearTimeout(this.syncDebounceTimer);
-    await this.performSync();
-  }
-
-  private triggerCloudSync() {
-    if (this.syncDebounceTimer) clearTimeout(this.syncDebounceTimer);
-    
-    this.syncDebounceTimer = setTimeout(async () => {
-       await this.performSync();
-    }, 5000); // Sync after 5 seconds of inactivity
-  }
-
-  private async performSync() {
-      // Only sync if Google is configured
-      if (!googleDriveService.isConfigured()) return;
-
-      const fullBackup = {
-        user: this.memoryCache[KEYS.USER],
-        vehicles: this.memoryCache[KEYS.VEHICLES],
-        transactions: this.memoryCache[KEYS.TRANSACTIONS],
-        categories: this.memoryCache[KEYS.CATEGORIES],
-        accounts: this.memoryCache[KEYS.ACCOUNTS],
-        last_updated: new Date().toISOString()
-      };
-      
-      await googleDriveService.uploadData(fullBackup);
   }
 
   // --- USER ---
@@ -144,7 +64,7 @@ class BackendService {
   }
 
   async saveUser(user: User): Promise<void> {
-    await this.persist(KEYS.USER, user);
+    this.persist(KEYS.USER, user);
   }
 
   // --- ACCOUNTS ---
@@ -160,7 +80,7 @@ class BackendService {
     } else {
       accounts.push(account);
     }
-    await this.persist(KEYS.ACCOUNTS, accounts);
+    this.persist(KEYS.ACCOUNTS, accounts);
   }
 
   async updateAccountBalance(accountId: string, amount: number, type: 'INCOME' | 'EXPENSE'): Promise<void> {
@@ -189,12 +109,12 @@ class BackendService {
     } else {
       categories.push(category);
     }
-    await this.persist(KEYS.CATEGORIES, categories);
+    this.persist(KEYS.CATEGORIES, categories);
   }
 
   async deleteCategory(id: string): Promise<void> {
     const categories = this.getCategories().filter(c => c.id !== id);
-    await this.persist(KEYS.CATEGORIES, categories);
+    this.persist(KEYS.CATEGORIES, categories);
   }
 
   // --- VEHICLES ---
@@ -205,12 +125,12 @@ class BackendService {
   async addVehicle(vehicle: Vehicle): Promise<void> {
     const vehicles = this.getVehicles();
     vehicles.push(vehicle);
-    await this.persist(KEYS.VEHICLES, vehicles);
+    this.persist(KEYS.VEHICLES, vehicles);
   }
 
   async updateVehicle(updatedVehicle: Vehicle): Promise<void> {
     const vehicles = this.getVehicles().map(v => v.id === updatedVehicle.id ? updatedVehicle : v);
-    await this.persist(KEYS.VEHICLES, vehicles);
+    this.persist(KEYS.VEHICLES, vehicles);
   }
 
   // --- TRANSACTIONS ---
@@ -225,7 +145,7 @@ class BackendService {
   async addTransaction(transaction: Transaction): Promise<void> {
     const transactions = this.getTransactions();
     transactions.push(transaction);
-    await this.persist(KEYS.TRANSACTIONS, transactions);
+    this.persist(KEYS.TRANSACTIONS, transactions);
 
     if (transaction.accountId) {
       await this.updateAccountBalance(transaction.accountId, transaction.amount, transaction.type);
@@ -242,14 +162,13 @@ class BackendService {
     }
     
     const newTransactions = transactions.filter(t => t.id !== id);
-    await this.persist(KEYS.TRANSACTIONS, newTransactions);
+    this.persist(KEYS.TRANSACTIONS, newTransactions);
   }
 
   // --- UTILS ---
   async clearData(): Promise<void> {
     localStorage.clear();
     this.memoryCache = {};
-    if (googleDriveService.isConfigured()) googleDriveService.signOut();
   }
 }
 

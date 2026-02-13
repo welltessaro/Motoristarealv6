@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { X, TrendingUp, TrendingDown, Fuel, Zap, Wallet } from 'lucide-react';
 import { TransactionType, Category, Transaction, Vehicle, FuelType, FUEL_LABELS, CategoryItem, Account } from '../types';
@@ -7,7 +8,8 @@ import { formatCurrency, handlePriceChange, formatDateForInput, formatDecimal } 
 interface TransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (transaction: Omit<Transaction, 'id'>) => void;
+  // Fix: Changed signature to omit userId which is handled centrally in App.tsx
+  onSave: (transaction: Omit<Transaction, 'id' | 'userId'>) => void;
   vehicle: Vehicle | null;
   categories: CategoryItem[];
   accounts: Account[];

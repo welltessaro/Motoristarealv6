@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect } from 'react';
-import { ViewState, Vehicle, Transaction, User, CategoryItem, Account } from './types';
-import { mockBackend } from './services/mockBackend';
-import { googleDriveService } from './services/googleDriveService';
+import { ViewState, Vehicle, Transaction, User, CategoryItem, Account, DEFAULT_CATEGORIES } from './types';
+import { dbService } from './services/dbService';
+import { supabase } from './services/supabaseClient';
 import AppLayout from './components/AppLayout';
 import Dashboard from './components/Dashboard';
 import TransactionModal from './components/TransactionModal';
@@ -12,17 +11,18 @@ import FeaturesModal from './components/FeaturesModal';
 import CategoryManagerModal from './components/CategoryManagerModal';
 import FinancialView from './components/FinancialView';
 import Onboarding from './components/Onboarding';
-import GoogleConfig from './components/GoogleConfig';
+import Auth from './components/Auth';
 import Button from './components/Button';
-import { LogOut, Tags, MessageSquare, Heart, Copy, Check, X, Cloud } from 'lucide-react';
+import { LogOut, Tags, MessageSquare, Heart, Copy, Check, X, Shield, RefreshCw, ChevronRight } from 'lucide-react';
 
 const App: React.FC = () => {
+  const [session, setSession] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [activeVehicleId, setActiveVehicleId] = useState<string>('');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [categories, setCategories] = useState<CategoryItem[]>([]);
+  const [categories, setCategories] = useState<CategoryItem[]>(DEFAULT_CATEGORIES);
   const [accounts, setAccounts] = useState<Account[]>([]);
   
   const [currentView, setCurrentView] = useState<ViewState['currentView']>('DASHBOARD');
@@ -31,159 +31,140 @@ const App: React.FC = () => {
   const [isFeaturesModalOpen, setIsFeaturesModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [isPixModalOpen, setIsPixModalOpen] = useState(false);
-  const [isGoogleConfigOpen, setIsGoogleConfigOpen] = useState(false);
   const [pixCopied, setPixCopied] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
 
   useEffect(() => {
-    const loadData = async () => {
-      // Initialize Backend
-      await mockBackend.init();
-      
-      const loadedUser = mockBackend.getUser();
-      const loadedVehicles = mockBackend.getVehicles();
-      const loadedCategories = mockBackend.getCategories();
-      const loadedAccounts = mockBackend.getAccounts();
-      const txs = mockBackend.getTransactions();
-      
-      setUser(loadedUser);
-      setVehicles(loadedVehicles);
-      setCategories(loadedCategories);
-      setAccounts(loadedAccounts);
-      setTransactions(txs);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) loadAppData(session.user.id);
+      else setIsLoading(false);
+    });
 
-      if (loadedVehicles.length > 0 && !activeVehicleId) {
-        setActiveVehicleId(loadedVehicles[0].id);
-      }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session) loadAppData(session.user.id);
+      else setIsLoading(false);
+    });
 
-      setIsLoading(false);
-    };
-    loadData();
+    return () => subscription.unsubscribe();
   }, [activeVehicleId]);
 
-  const dashboardTransactions = transactions.filter(t => t.vehicleId === activeVehicleId);
+  const loadAppData = async (userId: string) => {
+    setIsLoading(true);
+    try {
+      const profile = await dbService.getProfile(userId);
+      if (profile) {
+        setUser({
+          id: profile.id,
+          name: profile.name,
+          email: session.user.email,
+          onboardingCompleted: profile.onboarding_completed,
+          monthlyGoal: profile.monthly_goal,
+          createdAt: profile.created_at
+        });
+
+        const [vList, accList, txList] = await Promise.all([
+          dbService.getVehicles(userId),
+          dbService.getAccounts(userId),
+          dbService.getTransactions(userId)
+        ]);
+
+        setVehicles(vList);
+        setAccounts(accList);
+        setTransactions(txList);
+
+        if (vList.length > 0 && !activeVehicleId) {
+          setActiveVehicleId(vList[0].id);
+        }
+      }
+    } catch (e) {
+      console.error('Erro ao carregar dados', e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleOnboardingComplete = async (data: { vehicle: Vehicle, userName: string }) => {
-    const { vehicle, userName } = data;
+    if (!session) return;
+    setIsLoading(true);
     
     const newUser: User = {
-      id: crypto.randomUUID(),
-      name: userName, // Use the name from the input
-      email: 'driver@email.com',
-      onboardingCompleted: true
+      id: session.user.id,
+      name: data.userName,
+      email: session.user.email,
+      onboardingCompleted: true,
+      createdAt: new Date().toISOString()
     };
-    await mockBackend.saveUser(newUser);
-    await mockBackend.addVehicle(vehicle);
+
+    // Use updateProfile instead of createProfile as the initial profile entry is created by a database trigger upon auth registration
+    await dbService.updateProfile(session.user.id, newUser);
+    // Note: createDefaultAccounts is not called here because default accounts are automatically created by a database trigger
+    await dbService.saveVehicle(data.vehicle, session.user.id);
     
-    const initialAccounts = mockBackend.getAccounts();
-    setAccounts(initialAccounts);
-    setUser(newUser);
-    setVehicles([vehicle]);
-    setActiveVehicleId(vehicle.id);
+    await loadAppData(session.user.id);
   };
 
   const handleUpdateUser = async (updatedUser: User) => {
-    await mockBackend.saveUser(updatedUser);
+    if (!session) return;
+    await dbService.updateProfile(session.user.id, updatedUser);
     setUser(updatedUser);
   };
 
-  const handleAddTransaction = async (newTx: Omit<Transaction, 'id'>) => {
-    const tx: Transaction = { ...newTx, id: crypto.randomUUID() };
-    await mockBackend.addTransaction(tx);
-    
-    setTransactions(prev => [...prev, tx]);
-    
-    if (tx.accountId) {
-      setAccounts(prev => prev.map(acc => {
-        if (acc.id === tx.accountId) {
-           return {
-             ...acc,
-             balance: tx.type === 'INCOME' ? acc.balance + tx.amount : acc.balance - tx.amount
-           };
-        }
-        return acc;
-      }));
-    }
+  const handleAddTransaction = async (newTx: Omit<Transaction, 'id' | 'userId'>) => {
+    if (!user || !session) return;
+    const txData = { ...newTx, userId: session.user.id };
+    const success = await dbService.addTransaction(txData);
+    if (success) loadAppData(session.user.id);
   };
 
-  const handleSaveVehicle = async (vehicle: Vehicle) => {
-    const exists = vehicles.find(v => v.id === vehicle.id);
-    if (exists) {
-      await mockBackend.updateVehicle(vehicle);
-      setVehicles(prev => prev.map(v => v.id === vehicle.id ? vehicle : v));
-    } else {
-      await mockBackend.addVehicle(vehicle);
-      setVehicles(prev => [...prev, vehicle]);
-      setActiveVehicleId(vehicle.id);
-    }
+  const handleSaveVehicle = async (vehicleData: Vehicle | Omit<Vehicle, 'userId'>) => {
+    if (!user || !session) return;
+    const success = await dbService.saveVehicle(vehicleData, session.user.id);
+    if (success) loadAppData(session.user.id);
     setEditingVehicle(null);
   };
 
   const handleArchiveVehicle = async (id: string) => {
+    if (!session) return;
     const v = vehicles.find(veh => veh.id === id);
     if(v) {
-      const updated = { ...v, isArchived: true };
-      await mockBackend.updateVehicle(updated);
-      const remaining = vehicles.filter(veh => veh.id !== id);
-      setVehicles(remaining);
-      if(remaining.length > 0) setActiveVehicleId(remaining[0].id);
-      else setActiveVehicleId('');
+      await dbService.saveVehicle({ ...v, isArchived: true }, session.user.id);
+      loadAppData(session.user.id);
     }
     setIsVehicleModalOpen(false);
   };
 
-  const handleAddCategory = async (category: CategoryItem) => {
-    await mockBackend.saveCategory(category);
-    setCategories(prev => [...prev, category]);
-  };
-
-  const handleDeleteCategory = async (id: string) => {
-    await mockBackend.deleteCategory(id);
-    setCategories(prev => prev.filter(c => c.id !== id));
-  };
-  
-  const handleAddAccount = async (account: Account) => {
-    await mockBackend.saveAccount(account);
-    setAccounts(prev => [...prev, account]);
-  }
-
   const handleLogout = async () => {
-    if (confirm('Deseja realmente apagar todos os dados locais?')) {
-      await mockBackend.clearData();
-      window.location.reload();
-    }
+    await supabase.auth.signOut();
+    setUser(null);
+    setVehicles([]);
+    setTransactions([]);
+    setSession(null);
   };
 
-  const handleOpenEmailFeedback = () => {
-    const email = "contato.wttecnologia@gmail.com";
-    const subject = encodeURIComponent("sugestão de melhoria MotoristaReallAPP");
-    window.location.href = `mailto:${email}?subject=${subject}`;
-  };
-
-  const handleCopyPix = () => {
-    const pixKey = "64.324.898/0001-36";
-    navigator.clipboard.writeText(pixKey).then(() => {
-      setPixCopied(true);
-    });
+  const copyPix = () => {
+    navigator.clipboard.writeText("contato.wttecnologia@gmail.com");
+    setPixCopied(true);
+    setTimeout(() => setPixCopied(false), 2000);
   };
 
   if (isLoading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
+        <div className="flex flex-col items-center gap-6">
           <div className="w-16 h-16 border-4 border-emerald-100 border-t-emerald-500 rounded-full animate-spin"></div>
-          <p className="text-slate-400 font-bold text-xs uppercase tracking-widest animate-pulse">MotoristaReal v1.0.0</p>
+          <p className="text-slate-800 font-black text-lg">Sincronizando Nuvem...</p>
         </div>
       </div>
     );
   }
 
-  if (!user || vehicles.length === 0) {
-    return <Onboarding onComplete={handleOnboardingComplete} />;
-  }
+  if (!session) return <Auth onSession={(sess) => setSession(sess)} />;
+  if (!user || vehicles.length === 0) return <Onboarding onComplete={handleOnboardingComplete} />;
 
   const activeVehicle = vehicles.find(v => v.id === activeVehicleId) || null;
-  const isGoogleConnected = !!googleDriveService.getUser();
+  const dashboardTransactions = transactions.filter(t => t.vehicleId === activeVehicleId);
 
   return (
     <AppLayout
@@ -192,10 +173,7 @@ const App: React.FC = () => {
       vehicles={vehicles}
       activeVehicleId={activeVehicleId}
       onSwitchVehicle={setActiveVehicleId}
-      onAddVehicle={() => {
-        setEditingVehicle(null);
-        setIsVehicleModalOpen(true);
-      }}
+      onAddVehicle={() => { setEditingVehicle(null); setIsVehicleModalOpen(true); }}
     >
       
       {currentView === 'DASHBOARD' && (
@@ -213,39 +191,25 @@ const App: React.FC = () => {
 
       {currentView === 'FLEET' && (
         <div className="space-y-4 animate-fade-in px-1">
-          <h2 className="text-2xl font-bold text-slate-800">Minha Frota</h2>
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="text-2xl font-black text-slate-800 tracking-tight">Minha Frota</h2>
+            <button onClick={() => setIsFeaturesModalOpen(true)} className="text-xs font-bold text-primary-600 bg-primary-50 px-3 py-1.5 rounded-full flex items-center gap-1">
+              PRO
+            </button>
+          </div>
           {vehicles.map(v => (
-            <div key={v.id} className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex justify-between items-center group active:scale-95 transition-transform">
+            <div key={v.id} className="bg-white p-5 rounded-[32px] shadow-sm border border-slate-100 flex justify-between items-center group">
               <div>
-                <h3 className="font-bold text-slate-800">{v.model}</h3>
-                <p className="text-xs text-slate-400 font-mono tracking-tighter">{v.plate}</p>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase mt-2 inline-block ${
-                  v.ownershipType === 'OWNED' ? 'bg-emerald-50 text-emerald-600' : 
-                  v.ownershipType === 'RENTED' ? 'bg-blue-50 text-blue-600' : 'bg-orange-50 text-orange-600'
-                }`}>
-                  {v.ownershipType === 'OWNED' ? 'Próprio' : v.ownershipType === 'RENTED' ? 'Alugado' : 'Financiado'}
-                </span>
+                <h3 className="font-black text-slate-800">{v.model}</h3>
+                <p className="text-[10px] text-slate-400 font-mono font-bold">{v.plate}</p>
               </div>
-              <Button 
-                variant="secondary" 
-                className="px-4 py-2 text-xs"
-                onClick={() => {
-                  setEditingVehicle(v);
-                  setIsVehicleModalOpen(true);
-                }}
-              >
-                Editar
+              <Button variant="secondary" className="px-5 py-2.5 text-xs font-black rounded-2xl" onClick={() => { setEditingVehicle(v); setIsVehicleModalOpen(true); }}>
+                Detalhes
               </Button>
             </div>
           ))}
-          <button 
-            onClick={() => {
-               setEditingVehicle(null);
-               setIsVehicleModalOpen(true);
-            }}
-            className="w-full py-6 border-2 border-dashed border-slate-200 rounded-3xl text-slate-400 font-bold text-sm flex items-center justify-center gap-2 active:bg-slate-50 transition-colors"
-          >
-            + Adicionar Carro
+          <button onClick={() => { setEditingVehicle(null); setIsVehicleModalOpen(true); }} className="w-full py-8 border-2 border-dashed border-slate-200 rounded-[32px] text-slate-400 font-black text-sm flex flex-col items-center justify-center gap-2 active:bg-slate-50 transition-colors">
+            <RefreshCw size={20} /> Adicionar Veículo
           </button>
         </div>
       )}
@@ -255,197 +219,76 @@ const App: React.FC = () => {
           accounts={accounts}
           transactions={transactions}
           categories={categories}
-          onAddAccount={handleAddAccount}
+          onAddAccount={() => setIsFeaturesModalOpen(true)}
           onOpenTransaction={() => setIsTransactionModalOpen(true)}
         />
       )}
 
-      {currentView === 'REPORTS' && (
-        <ReportsView transactions={dashboardTransactions} categories={categories} />
-      )}
+      {currentView === 'REPORTS' && <ReportsView transactions={dashboardTransactions} categories={categories} />}
 
       {currentView === 'PROFILE' && (
         <div className="space-y-6 animate-fade-in px-1">
-          <h2 className="text-2xl font-bold text-slate-800">Ajustes</h2>
-          
+          <h2 className="text-2xl font-black text-slate-800 tracking-tight">Perfil</h2>
           <div className="bg-white p-8 rounded-[40px] shadow-sm border border-slate-100 text-center relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-emerald-400 to-blue-500"></div>
+            <div className="absolute top-0 left-0 w-full h-2 bg-primary-600"></div>
             <div className="w-24 h-24 bg-slate-50 text-slate-300 rounded-full flex items-center justify-center text-4xl font-black mx-auto mb-4 border-4 border-white shadow-xl">
               {user.name.charAt(0)}
             </div>
-            <h3 className="font-black text-xl text-slate-800 tracking-tight">{user.name}</h3>
-            <p className="text-slate-400 text-sm font-medium">{user.email}</p>
+            <h3 className="font-black text-xl text-slate-800">{user.name}</h3>
+            <p className="text-slate-400 text-xs font-bold uppercase">{user.email}</p>
           </div>
-
           <div className="grid grid-cols-1 gap-3">
-            <button 
-              onClick={() => setIsGoogleConfigOpen(true)}
-              className={`w-full p-5 rounded-3xl border flex items-center justify-between group active:bg-slate-50 transition-colors ${isGoogleConnected ? 'bg-blue-50 border-blue-100' : 'bg-white border-slate-100'}`}
-            >
-              <div className="flex items-center gap-4">
-                <div className={`p-3 rounded-2xl ${isGoogleConnected ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                  <Cloud size={20} />
-                </div>
-                <div>
-                  <span className={`font-bold block ${isGoogleConnected ? 'text-blue-700' : 'text-slate-700'}`}>
-                    {isGoogleConnected ? 'Sincronização Drive' : 'Conectar Google Drive'}
-                  </span>
-                  {isGoogleConnected && <span className="text-[10px] text-blue-500">Backup automático</span>}
-                </div>
+             <div className="bg-emerald-50 p-5 rounded-[32px] border border-emerald-100 flex items-center gap-4">
+              <div className="p-3 bg-emerald-500 text-white rounded-2xl"><Shield size={20} /></div>
+              <div>
+                <p className="font-black text-emerald-800 text-sm">Nuvem Sincronizada</p>
+                <p className="text-[10px] text-emerald-600 font-bold uppercase">Dados protegidos pelo Supabase</p>
               </div>
-              <Cloud size={16} className={isGoogleConnected ? 'text-blue-400' : 'text-slate-300'} />
-            </button>
-
-            <button 
-              onClick={() => setIsCategoryModalOpen(true)}
-              className="w-full bg-white p-5 rounded-3xl border border-slate-100 flex items-center justify-between group active:bg-slate-50 transition-colors"
-            >
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-indigo-50 text-indigo-500 rounded-2xl">
-                  <Tags size={20} />
-                </div>
-                <span className="font-bold text-slate-700">Categorias de Lançamento</span>
-              </div>
-              <Tags size={16} className="text-slate-300" />
-            </button>
-
-            <button 
-              onClick={handleOpenEmailFeedback}
-              className="w-full bg-white p-5 rounded-3xl border border-slate-100 flex items-center justify-between group active:bg-slate-50 transition-colors"
-            >
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-emerald-50 text-emerald-500 rounded-2xl">
-                  <MessageSquare size={20} />
-                </div>
-                <span className="font-bold text-slate-700">Deixe suas sugestões</span>
-              </div>
-              <MessageSquare size={16} className="text-slate-300" />
-            </button>
-
-            <button 
-              onClick={() => {
-                setIsPixModalOpen(true);
-                setPixCopied(false);
-              }}
-              className="w-full bg-white p-5 rounded-3xl border border-slate-100 flex items-center justify-between group active:bg-slate-50 transition-colors"
-            >
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-rose-50 text-rose-500 rounded-2xl">
-                  <Heart size={20} fill="currentColor" />
-                </div>
-                <span className="font-bold text-slate-700">Ajude nosso projeto</span>
-              </div>
-              <Heart size={16} className="text-slate-300" />
-            </button>
-          </div>
-
-          <button 
-            onClick={handleLogout}
-            className="w-full py-4 text-red-500 font-bold text-sm flex items-center justify-center gap-2 mt-8 opacity-50 hover:opacity-100 transition-opacity"
-          >
-            <LogOut size={16} /> Resetar Aplicativo
-          </button>
-          
-          <p className="text-center text-[10px] text-slate-300 font-black uppercase tracking-[0.2em]">Build 1.0.0-stable</p>
-        </div>
-      )}
-
-      {/* Google Config Modal */}
-      <GoogleConfig 
-        isOpen={isGoogleConfigOpen} 
-        onClose={() => setIsGoogleConfigOpen(false)} 
-      />
-
-      {/* PIX Donation Modal */}
-      {isPixModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white w-full max-w-sm rounded-[32px] shadow-2xl overflow-hidden relative animate-scale-up">
-            <button 
-              onClick={() => setIsPixModalOpen(false)}
-              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 active:scale-90 transition-transform"
-            >
-              <X size={24} />
-            </button>
-
-            <div className="p-8 text-center">
-              <div className="w-16 h-16 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Heart size={32} fill="currentColor" />
-              </div>
-              
-              <h3 className="text-xl font-black text-slate-800 mb-2">Apoie o MotoristaReal</h3>
-              <p className="text-slate-500 text-sm mb-6 leading-relaxed">
-                Sua ajuda mantém o projeto gratuito e nos permite desenvolver novas funcionalidades para todos os motoristas.
-              </p>
-
-              {!pixCopied ? (
-                <div className="space-y-4">
-                  <div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Chave CNPJ</p>
-                    <p className="font-mono font-bold text-slate-700 text-sm">64.324.898/0001-36</p>
-                  </div>
-                  
-                  <Button 
-                    fullWidth 
-                    onClick={handleCopyPix}
-                    className="bg-slate-900 text-white hover:bg-black py-4"
-                  >
-                    <Copy size={18} /> Copiar Chave PIX
-                  </Button>
-                </div>
-              ) : (
-                <div className="animate-fade-in space-y-4 py-4">
-                  <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-2">
-                    <Check size={24} strokeWidth={3} />
-                  </div>
-                  <h4 className="font-bold text-emerald-600">Chave Copiada!</h4>
-                  <p className="text-sm text-slate-500 px-4">
-                    Muito obrigado pelo apoio! O MotoristaReal cresce junto com você. 🚀
-                  </p>
-                  <Button 
-                    fullWidth 
-                    variant="ghost" 
-                    onClick={() => setIsPixModalOpen(false)}
-                    className="text-slate-400 font-bold"
-                  >
-                    Fechar
-                  </Button>
-                </div>
-              )}
             </div>
+            <button onClick={() => setIsCategoryModalOpen(true)} className="w-full bg-white p-5 rounded-[32px] border border-slate-100 flex items-center justify-between group">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-slate-50 text-slate-500 rounded-2xl"><Tags size={20} /></div>
+                <span className="font-black text-slate-700 text-sm">Categorias</span>
+              </div>
+              <ChevronRight size={16} className="text-slate-300" />
+            </button>
+            <button onClick={() => setIsPixModalOpen(true)} className="w-full bg-white p-5 rounded-[32px] border border-slate-100 flex items-center justify-between group">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-rose-50 text-rose-500 rounded-2xl"><Heart size={20} fill="currentColor" /></div>
+                <span className="font-black text-slate-700 text-sm">Apoie o Projeto</span>
+              </div>
+              <ChevronRight size={16} className="text-slate-300" />
+            </button>
           </div>
+          <button onClick={handleLogout} className="w-full py-4 text-red-500 font-black text-xs flex items-center justify-center gap-2 mt-8 opacity-40 hover:opacity-100 transition-opacity">
+            <LogOut size={16} /> SAIR DA CONTA
+          </button>
         </div>
       )}
 
-      <TransactionModal 
-        isOpen={isTransactionModalOpen}
-        onClose={() => setIsTransactionModalOpen(false)}
-        onSave={handleAddTransaction}
-        vehicle={activeVehicle}
-        categories={categories}
-        accounts={accounts}
-      />
-
-      <VehicleManagerModal
-        isOpen={isVehicleModalOpen}
-        onClose={() => { setIsVehicleModalOpen(false); setEditingVehicle(null); }}
-        vehicle={editingVehicle}
-        onSave={handleSaveVehicle}
-        onArchive={handleArchiveVehicle}
-        onAddTransaction={handleAddTransaction}
-      />
-
-      <FeaturesModal 
-        isOpen={isFeaturesModalOpen} 
-        onClose={() => setIsFeaturesModalOpen(false)} 
-      />
-
-      <CategoryManagerModal
-        isOpen={isCategoryModalOpen}
-        onClose={() => setIsCategoryModalOpen(false)}
-        categories={categories}
-        onAddCategory={handleAddCategory}
-        onDeleteCategory={handleDeleteCategory}
-      />
+      {/* Modals */}
+      <TransactionModal isOpen={isTransactionModalOpen} onClose={() => setIsTransactionModalOpen(false)} onSave={handleAddTransaction} vehicle={activeVehicle} categories={categories} accounts={accounts} />
+      <VehicleManagerModal isOpen={isVehicleModalOpen} onClose={() => { setIsVehicleModalOpen(false); setEditingVehicle(null); }} vehicle={editingVehicle} onSave={handleSaveVehicle} onArchive={handleArchiveVehicle} onAddTransaction={handleAddTransaction} />
+      <FeaturesModal isOpen={isFeaturesModalOpen} onClose={() => setIsFeaturesModalOpen(false)} />
+      <CategoryManagerModal isOpen={isCategoryModalOpen} onClose={() => setIsCategoryModalOpen(false)} categories={categories} onAddCategory={() => setIsFeaturesModalOpen(true)} onDeleteCategory={() => {}} />
+      
+      {/* Pix Support Modal */}
+      {isPixModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in" onClick={() => setIsPixModalOpen(false)}>
+          <div className="bg-white w-full max-w-sm rounded-[40px] p-8 text-center animate-scale-up" onClick={e => e.stopPropagation()}>
+            <div className="w-20 h-20 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-6"><Heart size={40} fill="currentColor" /></div>
+            <h3 className="text-xl font-black text-slate-800 mb-2">Gostou do App?</h3>
+            <p className="text-slate-500 text-sm mb-8">Ajude a manter o projeto ativo e livre de anúncios com qualquer contribuição via PIX.</p>
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 mb-6 flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-400 truncate mr-4">contato.wttecnologia@gmail.com</span>
+              <button onClick={copyPix} className="p-2 bg-white text-primary-600 rounded-xl shadow-sm border border-slate-100 active:scale-90 transition-transform">
+                {pixCopied ? <Check size={18} /> : <Copy size={18} />}
+              </button>
+            </div>
+            <Button fullWidth onClick={() => setIsPixModalOpen(false)}>Fechar</Button>
+          </div>
+        </div>
+      )}
 
     </AppLayout>
   );
