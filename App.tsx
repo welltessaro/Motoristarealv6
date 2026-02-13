@@ -13,7 +13,7 @@ import FinancialView from './components/FinancialView';
 import Onboarding from './components/Onboarding';
 import Auth from './components/Auth';
 import Button from './components/Button';
-import { LogOut, Tags, MessageSquare, Heart, Copy, Check, X, Shield, RefreshCw, ChevronRight } from 'lucide-react';
+import { LogOut, Tags, Heart, Copy, Check, Shield, RefreshCw, ChevronRight } from 'lucide-react';
 
 const App: React.FC = () => {
   const [session, setSession] = useState<any>(null);
@@ -35,20 +35,39 @@ const App: React.FC = () => {
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session) loadAppData(session.user.id);
-      else setIsLoading(false);
-    });
+    // Inicialização robusta
+    const initApp = async () => {
+      try {
+        const { data: { session: currentSession }, error } = await supabase.auth.getSession();
+        
+        if (error) throw error;
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (session) loadAppData(session.user.id);
-      else setIsLoading(false);
+        setSession(currentSession);
+        if (currentSession) {
+          await loadAppData(currentSession.user.id);
+        } else {
+          setIsLoading(false);
+        }
+      } catch (err) {
+        console.error("Erro na inicialização:", err);
+        setIsLoading(false);
+      }
+    };
+
+    initApp();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+      if (newSession) {
+        loadAppData(newSession.user.id);
+      } else {
+        setIsLoading(false);
+        setUser(null);
+      }
     });
 
     return () => subscription.unsubscribe();
-  }, [activeVehicleId]);
+  }, []);
 
   const loadAppData = async (userId: string) => {
     setIsLoading(true);
@@ -58,7 +77,7 @@ const App: React.FC = () => {
         setUser({
           id: profile.id,
           name: profile.name,
-          email: session.user.email,
+          email: session?.user?.email || '',
           onboardingCompleted: profile.onboarding_completed,
           monthlyGoal: profile.monthly_goal,
           createdAt: profile.created_at
@@ -77,6 +96,9 @@ const App: React.FC = () => {
         if (vList.length > 0 && !activeVehicleId) {
           setActiveVehicleId(vList[0].id);
         }
+      } else {
+        // Se não tem perfil mas está logado, o Onboarding deve assumir
+        setUser(null);
       }
     } catch (e) {
       console.error('Erro ao carregar dados', e);
@@ -88,21 +110,22 @@ const App: React.FC = () => {
   const handleOnboardingComplete = async (data: { vehicle: Vehicle, userName: string }) => {
     if (!session) return;
     setIsLoading(true);
-    
-    const newUser: User = {
-      id: session.user.id,
-      name: data.userName,
-      email: session.user.email,
-      onboardingCompleted: true,
-      createdAt: new Date().toISOString()
-    };
+    try {
+      const newUser: User = {
+        id: session.user.id,
+        name: data.userName,
+        email: session.user.email,
+        onboardingCompleted: true,
+        createdAt: new Date().toISOString()
+      };
 
-    // Use updateProfile instead of createProfile as the initial profile entry is created by a database trigger upon auth registration
-    await dbService.updateProfile(session.user.id, newUser);
-    // Note: createDefaultAccounts is not called here because default accounts are automatically created by a database trigger
-    await dbService.saveVehicle(data.vehicle, session.user.id);
-    
-    await loadAppData(session.user.id);
+      await dbService.updateProfile(session.user.id, newUser);
+      await dbService.saveVehicle(data.vehicle, session.user.id);
+      await loadAppData(session.user.id);
+    } catch (err) {
+      console.error("Erro no onboarding:", err);
+      setIsLoading(false);
+    }
   };
 
   const handleUpdateUser = async (updatedUser: User) => {
@@ -141,6 +164,7 @@ const App: React.FC = () => {
     setVehicles([]);
     setTransactions([]);
     setSession(null);
+    setIsLoading(false);
   };
 
   const copyPix = () => {
@@ -154,7 +178,7 @@ const App: React.FC = () => {
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="flex flex-col items-center gap-6">
           <div className="w-16 h-16 border-4 border-emerald-100 border-t-emerald-500 rounded-full animate-spin"></div>
-          <p className="text-slate-800 font-black text-lg">Sincronizando Nuvem...</p>
+          <p className="text-slate-800 font-black text-lg animate-pulse">Sincronizando Nuvem...</p>
         </div>
       </div>
     );
@@ -266,13 +290,11 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Modals */}
       <TransactionModal isOpen={isTransactionModalOpen} onClose={() => setIsTransactionModalOpen(false)} onSave={handleAddTransaction} vehicle={activeVehicle} categories={categories} accounts={accounts} />
       <VehicleManagerModal isOpen={isVehicleModalOpen} onClose={() => { setIsVehicleModalOpen(false); setEditingVehicle(null); }} vehicle={editingVehicle} onSave={handleSaveVehicle} onArchive={handleArchiveVehicle} onAddTransaction={handleAddTransaction} />
       <FeaturesModal isOpen={isFeaturesModalOpen} onClose={() => setIsFeaturesModalOpen(false)} />
       <CategoryManagerModal isOpen={isCategoryModalOpen} onClose={() => setIsCategoryModalOpen(false)} categories={categories} onAddCategory={() => setIsFeaturesModalOpen(true)} onDeleteCategory={() => {}} />
       
-      {/* Pix Support Modal */}
       {isPixModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in" onClick={() => setIsPixModalOpen(false)}>
           <div className="bg-white w-full max-w-sm rounded-[40px] p-8 text-center animate-scale-up" onClick={e => e.stopPropagation()}>
