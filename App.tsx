@@ -1,18 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { ViewState, Vehicle, Transaction, User, CategoryItem, Account, DEFAULT_CATEGORIES } from './types';
-import { dbService } from './services/dbService';
-import { supabase } from './services/supabaseClient';
-import AppLayout from './components/AppLayout';
-import Dashboard from './components/Dashboard';
-import TransactionModal from './components/TransactionModal';
-import VehicleManagerModal from './components/VehicleManagerModal';
-import ReportsView from './components/ReportsView';
-import FeaturesModal from './components/FeaturesModal';
-import CategoryManagerModal from './components/CategoryManagerModal';
-import FinancialView from './components/FinancialView';
-import Onboarding from './components/Onboarding';
-import Auth from './components/Auth';
-import Button from './components/Button';
+import { ViewState, Vehicle, Transaction, User, CategoryItem, Account, DEFAULT_CATEGORIES } from './types.ts';
+import { dbService } from './services/dbService.ts';
+import { supabase } from './services/supabaseClient.ts';
+import AppLayout from './components/AppLayout.tsx';
+import Dashboard from './components/Dashboard.tsx';
+import TransactionModal from './components/TransactionModal.tsx';
+import VehicleManagerModal from './components/VehicleManagerModal.tsx';
+import ReportsView from './components/ReportsView.tsx';
+import FeaturesModal from './components/FeaturesModal.tsx';
+import CategoryManagerModal from './components/CategoryManagerModal.tsx';
+import FinancialView from './components/FinancialView.tsx';
+import Onboarding from './components/Onboarding.tsx';
+import Auth from './components/Auth.tsx';
+import Button from './components/Button.tsx';
 import { LogOut, Tags, Heart, Copy, Check, Shield, RefreshCw, ChevronRight } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -35,11 +35,9 @@ const App: React.FC = () => {
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
 
   useEffect(() => {
-    // Inicialização robusta
     const initApp = async () => {
       try {
         const { data: { session: currentSession }, error } = await supabase.auth.getSession();
-        
         if (error) throw error;
 
         setSession(currentSession);
@@ -96,9 +94,6 @@ const App: React.FC = () => {
         if (vList.length > 0 && !activeVehicleId) {
           setActiveVehicleId(vList[0].id);
         }
-      } else {
-        // Se não tem perfil mas está logado, o Onboarding deve assumir
-        setUser(null);
       }
     } catch (e) {
       console.error('Erro ao carregar dados', e);
