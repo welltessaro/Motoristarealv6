@@ -1,20 +1,18 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# MotoristaReal 🚗💨
 
-# Run and deploy your AI Studio app
+Gestão financeira inteligente para motoristas de aplicativo.
 
-This contains everything you need to run your app locally.
+## 🚀 Como iniciar
+1. Clone o projeto.
+2. Configure o seu projeto no Supabase utilizando o script `supabase_schema.sql`.
+3. Atualize as credenciais no arquivo `services/supabaseClient.ts`.
+4. Faça o deploy no Cloudflare Pages selecionando a pasta raiz.
 
-View your app in AI Studio: https://ai.studio/apps/drive/1n3oPwSbwU7AFqybiHY0gl9t6TkRDUzt1
+## 🛠 Comandos Úteis
+Para rodar localmente:
+```bash
+npx serve .
+```
 
-## Run Locally
-
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## 📄 Documentação
+Para detalhes técnicos completos, consulte o arquivo [DOCUMENTATION.md](./DOCUMENTATION.md).
